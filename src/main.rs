@@ -25,7 +25,7 @@ fn main() {
     // }
 
     let arec= std::process::Command::new("arecord")
-        .args(vec!["-f", "S16_LE", "-c", "1", "-r", "48000", "test_arec.wav"])
+        .args(vec!["-D", "plughw:1,0", "-f", "S16_LE", "-c", "1", "-r", "48000", "test_arec.wav"])
         .spawn().expect("Failed to launch arecord!");
 
     
