@@ -4,8 +4,6 @@ use std::{env, thread::sleep, time::Duration};
 use std::fs::File;
 use std::io;
 use std::io::BufWriter;
-// use hound::*;
-// use crossbeam::*;
 extern crate hound;
 extern crate crossbeam;
 
@@ -18,18 +16,31 @@ const CLARITY_THRESHOLD: f64 = 0.25;
 fn main() {
 
     
-    match record("test.wav") {
-        Err(x) => {
-            println!("Error: {}", x);
-            return;
-        },
-        _ => {}
-    }
+    // match record("test.wav") {
+    //     Err(x) => {
+    //         println!("Error: {}", x);
+    //         return;
+    //     },
+    //     _ => {}
+    // }
+
+    let arec= std::process::Command::new("arecord")
+        .args(vec!["-f", "S16_LE", "-c", "1", "-r", "48000", "test_arec.wav"])
+        .spawn().expect("Failed to launch arecord!");
+
+    
+    println!("Press enter to stop recording");
+    let stdin = io::stdin();
+    let input = &mut String::new();
+    let _ = stdin.read_line(input);
+    
+    // TODO: kill arec in case of sigint failure
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(arec.id() as i32), nix::sys::signal::Signal::SIGINT);
 
 
     let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
 
-    let wav_sound = awedio::sounds::open_file("test.wav").expect("couldn't open audio file");
+    let wav_sound = awedio::sounds::open_file("test_arec.wav").expect("couldn't open audio file");
     let mut test_sound = wav_sound.into_memory_sound().expect("Could not make memory sound");
     let sound = test_sound.clone();
 
