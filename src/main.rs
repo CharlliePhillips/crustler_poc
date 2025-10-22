@@ -21,6 +21,7 @@ const CLARITY_THRESHOLD: f64 = 0.25;
 fn main() {
     let i2c = rppal::i2c::I2c::new().expect("failed to open I2C bus!");
 
+    // using an alternate address: https://docs.rs/ssd1306/latest/ssd1306/struct.I2CDisplayInterface.html
     let interface = I2CDisplayInterface::new(i2c);
     let mut display = Ssd1306::new(
         interface,
@@ -58,6 +59,7 @@ fn main() {
     let arec= std::process::Command::new("arecord")
         .args(vec!["-D", "plughw:1,0", "-f", "S16_LE", "-c", "1", "-r", "48000", "test_arec.wav"])
         .spawn().expect("Failed to launch arecord!");
+    println!("recording...");
     
     display.clear_buffer();
     Text::with_baseline("Recording", Point::new(8, 8), text_style, Baseline::Top)
@@ -73,10 +75,16 @@ fn main() {
     let gpio = Gpio::new().expect("failed to init gpio");
     let input = gpio.get(27).expect("failed to get gpio 27!").into_input();
     
-    while (input.is_low()) {}
+    while input.is_low() {}
 
     // TODO: kill arec in case of sigint failure
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(arec.id() as i32), nix::sys::signal::Signal::SIGINT);
+    
+    display.clear_buffer();
+    Text::with_baseline("playing", Point::new(8, 8), text_style, Baseline::Top)
+        .draw(&mut display)
+        .unwrap();
+    display.flush().unwrap();
 
 
     let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
