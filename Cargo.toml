@@ -5,10 +5,13 @@ edition = "2024"
 
 [dependencies]
 awedio = "0.5.0"
+embedded-graphics = "0.8.1"
 # crossbeam = "0.8.4"
 hound = "3.5.1"
 nix = {version = "0.30.1", features = ["signal"]}
 pitch = "0.2.0"
 pitch-detection = "0.3.0"
+rppal = {version = "0.22.1", features = ["hal"]}
+ssd1306 = "0.10.0"
 # soundio = "0.2.1"
 # sysinfo = "0.37.2"
