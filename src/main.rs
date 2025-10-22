@@ -75,16 +75,20 @@ fn main() {
     let gpio = Gpio::new().expect("failed to init gpio");
     let input = gpio.get(27).expect("failed to get gpio 27!").into_input();
     
-    while input.is_low() {}
+    let mut wait = input.is_low();
+    while wait {
+        wait = input.is_low();
+    }
 
     // TODO: kill arec in case of sigint failure
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(arec.id() as i32), nix::sys::signal::Signal::SIGINT);
+    let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(arec.id() as i32), nix::sys::signal::Signal::SIGINT);
     
     display.clear_buffer();
     Text::with_baseline("playing", Point::new(8, 8), text_style, Baseline::Top)
         .draw(&mut display)
         .unwrap();
     display.flush().unwrap();
+    println!("playing");
 
 
     let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
@@ -124,4 +128,7 @@ fn main() {
     manager.play(Box::new(third));
 
     std::thread::sleep(std::time::Duration::from_millis(5000));
+    
+    display.clear_buffer();
+    display.flush().unwrap();
 }
