@@ -55,7 +55,6 @@ fn main() {
 
     sleep(Duration::from_secs(1));
 
-
     let arec= std::process::Command::new("arecord")
         .args(vec!["-D", "plughw:1,0", "-f", "S16_LE", "-c", "1", "-r", "48000", "test_arec.wav"])
         .spawn().expect("Failed to launch arecord!");
@@ -75,9 +74,9 @@ fn main() {
     let gpio = Gpio::new().expect("failed to init gpio");
     let input = gpio.get(27).expect("failed to get gpio 27!").into_input();
     
-    let mut wait = input.is_low();
+    let mut wait = input.is_high();
     while wait {
-        wait = input.is_low();
+        wait = input.is_high();
     }
 
     // TODO: kill arec in case of sigint failure
@@ -91,7 +90,7 @@ fn main() {
     println!("playing");
 
 
-    let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
+    //let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
     let mut backend =
         backends::CpalBackend::with_default_host_and_device(1,48000,CpalBufferSize::Default).ok_or(backends::CpalBackendError::NoDevice).expect("failed to initilize cpal backend!");
     let mut manager = backend.start(|error| eprintln!("error with cpal output stream: {}", error)).expect("failed to initialize sound manager!");
@@ -127,8 +126,54 @@ fn main() {
     manager.play(Box::new(second));
     manager.play(Box::new(third));
 
-    std::thread::sleep(std::time::Duration::from_millis(5000));
+    let mut next_lev_5: u8 = 6; 
+    let mut next_lev_4: u8 = 6; 
+    let mut next_lev_3: u8 = 6; 
+
+    for i in 1..22 {
+        if next_lev_5 > 0 {
+            set_eq(5, next_lev_5);
+            next_lev_5 -= 1;
+        }
+        if i % 2 == 0 && next_lev_4 > 0 {
+            set_eq(4, next_lev_4);
+            next_lev_4 -= 1;
+        }
+        if i % 2 == 0 && next_lev_3 > 0{
+            set_eq(3, next_lev_3);
+            next_lev_3 -= 1;
+        }
+        sleep(std::time::Duration::from_millis(238));
+    }
+
+    // std::thread::sleep(std::time::Duration::from_millis(5000));
     
     display.clear_buffer();
     display.flush().unwrap();
+}
+
+fn init_eq() {
+    let _amix = std::process::Command::new("amixer")
+        .args(vec!["-c", "1", "cset", "numid=9", "on"]);
+    for freq in 10..15 {
+        let numid_string = format!("numid={}", freq);
+        let numid= numid_string.as_str();
+        let _amix = std::process::Command::new("amixer")
+            .args(vec!["-c", "1", "cset", numid, "7"])
+            .spawn().expect("Failed to launch amixer!");
+    }
+}
+
+fn set_eq(freq: u8, level: u8) {
+    if freq > 5 || freq == 0 {
+        return;
+    }
+    let numid_string = format!("numid={}", (freq + 9));
+    let numid= numid_string.as_str();
+    let lev_string = level.to_string();
+    let lev = lev_string.as_str();
+    let _amix = std::process::Command::new("amixer")
+        .args(vec!["-c", "1", "cset", numid, lev])
+        .spawn().expect("Failed to launch amixer!");
+
 }
