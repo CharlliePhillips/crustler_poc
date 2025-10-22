@@ -145,7 +145,7 @@ fn main() {
             set_eq(3, next_lev_3);
             next_lev_3 -= 1;
         }
-        sleep(std::time::Duration::from_millis(238));
+        sleep(std::time::Duration::from_millis(138));
     }
 
     // std::thread::sleep(std::time::Duration::from_millis(5000));
@@ -155,8 +155,10 @@ fn main() {
 }
 
 fn init_eq() {
-    let _amix = std::process::Command::new("amixer")
-        .args(vec!["-c", "1", "cset", "numid=9", "on"]);
+    let _amix_en = std::process::Command::new("amixer")
+        .args(vec!["-c", "1", "cset", "numid=9", "on"])
+        .spawn().expect("Failed to launch amixer!");
+    sleep(std::time::Duration::from_millis(50));
     for freq in 10..15 {
         let numid_string = format!("numid={}", freq);
         let numid= numid_string.as_str();
