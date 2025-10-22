@@ -132,7 +132,7 @@ fn main() {
     let mut next_lev_4: i8 = 6; 
     let mut next_lev_3: i8 = 6; 
 
-    for i in 1..31 {
+    for i in 1..37 {
         if next_lev_5 >= 0 {
             set_eq(5, next_lev_5);
             next_lev_5 -= 1;
@@ -161,7 +161,7 @@ fn init_eq() {
         let numid_string = format!("numid={}", freq);
         let numid= numid_string.as_str();
         let _amix = std::process::Command::new("amixer")
-            .args(vec!["-c", "1", "cset", numid, "10"])
+            .args(vec!["-c", "1", "cset", numid, "12"])
             .spawn().expect("Failed to launch amixer!");
     }
 }
