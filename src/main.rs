@@ -145,7 +145,7 @@ fn main() {
             set_eq(3, next_lev_3);
             next_lev_3 -= 1;
         }
-        sleep(std::time::Duration::from_millis(238));
+        sleep(std::time::Duration::from_millis(138));
     }
 
     // std::thread::sleep(std::time::Duration::from_millis(5000));
