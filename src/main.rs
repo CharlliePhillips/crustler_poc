@@ -1,4 +1,4 @@
-use awedio::{sounds::{wrappers::AdjustableSpeed, MemorySound}, *};
+use awedio::{backends::CpalBufferSize, sounds::{wrappers::AdjustableSpeed, MemorySound}, *};
 use pitch_detection::{detector::{mcleod::McLeodDetector, PitchDetector}, *};
 use std::{env, thread::sleep, time::Duration};
 use std::fs::File;
@@ -26,6 +26,9 @@ fn main() {
 
 
     let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
+    let mut backend =
+        backends::CpalBackend::with_default_host_and_device(1,48000,CpalBufferSize::Default).ok_or(backends::CpalBackendError::NoDevice).expect("failed to initilize cpal backend!");
+    let mut manager = backend.start(|error| eprintln!("error with cpal output stream: {}", error)).expect("failed to initialize sound manager!");
 
     let wav_sound = awedio::sounds::open_file("test_arec.wav").expect("couldn't open audio file");
     let mut test_sound = wav_sound.into_memory_sound().expect("Could not make memory sound");
@@ -48,15 +51,15 @@ fn main() {
         .get_pitch(&samples, SAMPLE_RATE, POWER_THRESHOLD, CLARITY_THRESHOLD)
         .unwrap(); 
 
-    let correction = 261.6 / (pitch.frequency as f32);
+    let correction: f64 = (523.2 / (pitch.frequency as f64));
 
-    let base: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of(1.0 * correction);
-    let second: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of(1.26 * correction);
-    let third: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of(1.498 * correction);
+    let base: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of((1.0 * correction) as f32);
+    let second: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of((1.26 * correction) as f32);
+    let third: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of((1.498 * correction) as f32);
 
     manager.play(Box::new(base));
     manager.play(Box::new(second));
     manager.play(Box::new(third));
 
-    std::thread::sleep(std::time::Duration::from_millis(2000));
+    std::thread::sleep(std::time::Duration::from_millis(5000));
 }
