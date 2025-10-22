@@ -19,6 +19,8 @@ const POWER_THRESHOLD: f64 = 0.0001;
 const CLARITY_THRESHOLD: f64 = 0.25;
 
 fn main() {
+    init_eq();
+
     let i2c = rppal::i2c::I2c::new().expect("failed to open I2C bus!");
 
     // using an alternate address: https://docs.rs/ssd1306/latest/ssd1306/struct.I2CDisplayInterface.html
@@ -126,20 +128,20 @@ fn main() {
     manager.play(Box::new(second));
     manager.play(Box::new(third));
 
-    let mut next_lev_5: u8 = 6; 
-    let mut next_lev_4: u8 = 6; 
-    let mut next_lev_3: u8 = 6; 
+    let mut next_lev_5: i8 = 6; 
+    let mut next_lev_4: i8 = 6; 
+    let mut next_lev_3: i8 = 6; 
 
-    for i in 1..22 {
-        if next_lev_5 > 0 {
+    for i in 1..31 {
+        if next_lev_5 >= 0 {
             set_eq(5, next_lev_5);
             next_lev_5 -= 1;
         }
-        if i % 2 == 0 && next_lev_4 > 0 {
+        if i % 2 == 0 && next_lev_4 >= 0 {
             set_eq(4, next_lev_4);
             next_lev_4 -= 1;
         }
-        if i % 2 == 0 && next_lev_3 > 0{
+        if i % 2 == 0 && next_lev_3 >= 0{
             set_eq(3, next_lev_3);
             next_lev_3 -= 1;
         }
@@ -159,13 +161,13 @@ fn init_eq() {
         let numid_string = format!("numid={}", freq);
         let numid= numid_string.as_str();
         let _amix = std::process::Command::new("amixer")
-            .args(vec!["-c", "1", "cset", numid, "7"])
+            .args(vec!["-c", "1", "cset", numid, "10"])
             .spawn().expect("Failed to launch amixer!");
     }
 }
 
-fn set_eq(freq: u8, level: u8) {
-    if freq > 5 || freq == 0 {
+fn set_eq(freq: u8, level: i8) {
+    if freq > 5 || freq == 0 || level < 0 {
         return;
     }
     let numid_string = format!("numid={}", (freq + 9));
