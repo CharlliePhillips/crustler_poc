@@ -128,9 +128,9 @@ fn main() {
     manager.play(Box::new(second));
     manager.play(Box::new(third));
 
-    let mut next_lev_5: i8 = 6; 
-    let mut next_lev_4: i8 = 6; 
-    let mut next_lev_3: i8 = 6; 
+    let mut next_lev_5: i8 = 11; 
+    let mut next_lev_4: i8 = 11; 
+    let mut next_lev_3: i8 = 11; 
 
     for i in 1..37 {
         if next_lev_5 >= 0 {
