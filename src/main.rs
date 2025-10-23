@@ -11,7 +11,7 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd1306};
-use vl53l1x::Vl53l1x;
+use vl53l1x::{Vl53l1x, Vl53l1xRangeStatus};
 
 enum FilterType {
     HPF,
@@ -37,15 +37,7 @@ fn main() {
     
     let i2c = rppal::i2c::I2c::new().expect("failed to open I2C bus!");
 
-    let tof_sensor: Arc<Mutex<Vl53l1x>> = Arc::new(Mutex::new(init_tof()));
-    let main_thr_sens = tof_sensor.clone();
-    let cur_roi: ROIRight = ROIRight::new(true);
-    let cur_eq3: AtomicU16 = AtomicU16::new(DEFAULT_EQ_LEVEL);
-    let mut tof_int_pin = gpio.get(TOF_INT_PIN).expect("failed to get tof interrupt pin").into_input();
-    tof_int_pin.set_async_interrupt(Trigger::RisingEdge, None, move | e| tof_eq_int(e, tof_sensor.clone(), &cur_roi, &cur_eq3)).expect("failed to setup TOF interrupt");
-    let mut sensor = main_thr_sens.lock().expect("failed to lock sensor to begin ranging");
-    sensor.start_ranging(vl53l1x::DistanceMode::Short).expect("failed to begin tof ranging");
-    drop(sensor);
+
 
     // using an alternate address: https://docs.rs/ssd1306/latest/ssd1306/struct.I2CDisplayInterface.html
     let interface = I2CDisplayInterface::new(i2c);
@@ -114,6 +106,15 @@ fn main() {
     display.flush().unwrap();
     println!("playing");
 
+    let tof_sensor: Arc<Mutex<Vl53l1x>> = Arc::new(Mutex::new(init_tof()));
+    let main_thr_sens = tof_sensor.clone();
+    let cur_roi: ROIRight = ROIRight::new(true);
+    let cur_eq3: AtomicU16 = AtomicU16::new(DEFAULT_EQ_LEVEL);
+    let mut tof_int_pin = gpio.get(TOF_INT_PIN).expect("failed to get tof interrupt pin").into_input();
+    tof_int_pin.set_async_interrupt(Trigger::RisingEdge, None, move | e| tof_eq_int(e, tof_sensor.clone(), &cur_roi, &cur_eq3)).expect("failed to setup TOF interrupt");
+    let mut sensor = main_thr_sens.lock().expect("failed to lock sensor to begin ranging");
+    sensor.start_ranging(vl53l1x::DistanceMode::Short).expect("failed to begin tof ranging");
+    drop(sensor);
 
     //let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
     let mut backend =
@@ -212,7 +213,7 @@ fn set_eq(freq: u8, level: i8) {
     let lev_string = level.to_string();
     let lev = lev_string.as_str();
     let _amix = std::process::Command::new("amixer")
-        .args(vec!["-c", "1", "cset", numid, lev])
+        .args(vec!["-q", "-c", "1", "cset", numid, lev])
         .spawn().expect("Failed to launch amixer!");
 
 }
@@ -223,27 +224,32 @@ fn init_tof() -> Vl53l1x {
     tof_sensor.set_measurement_timing_budget(20000).expect("failed to set measurement timing");
     tof_sensor.set_inter_measurement_period(24).expect("failed to set inter-measurement timing");
 
-    tof_sensor.set_user_roi(8, 0, 15, 15).expect("failed to set ROI Right");
+    tof_sensor.set_user_roi(8, 15, 15, 0).expect("failed to set ROI Right");
 
     return tof_sensor;
 }
 
 fn tof_eq_int(_event: Event, tof_sensor: Arc<Mutex<Vl53l1x>>, cur_roi: &ROIRight, cur_eq3: &AtomicU16) {
     let mut sensor = tof_sensor.lock().expect("failed to acquire sensor lock");
-        let sample = sensor.read_sample().expect("failed to get right sample");
-        let filter_strength: i8 = if sample.distance < 300 {
-            (sample.distance/25).try_into().unwrap()
-        } else {
-            12
-        };
-    if cur_roi.load(std::sync::atomic::Ordering::SeqCst) {
-        set_filter(FilterType::LPF, filter_strength, cur_eq3);
-        cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
-        sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Left during interrupt");
-    } else {
-        set_filter(FilterType::HPF, filter_strength, cur_eq3);
-        cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
-        sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Right during interrupt");
+    let sample = sensor.read_sample().expect("failed to get right sample");
+    match sample.status {
+        Vl53l1xRangeStatus::Ok => {
+            let filter_strength: i8 = if sample.distance < 300 {
+                (sample.distance/25).try_into().unwrap()
+            } else {
+                12
+            };
+            if cur_roi.load(std::sync::atomic::Ordering::SeqCst) {
+                set_filter(FilterType::LPF, filter_strength, cur_eq3);
+                cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
+                sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Left during interrupt");
+            } else {
+                set_filter(FilterType::HPF, filter_strength, cur_eq3);
+                cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
+                sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Right during interrupt");
+            }
+        }
+        _ => {}
     }
 }
 
