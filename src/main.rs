@@ -1,7 +1,7 @@
-use awedio::{backends::CpalBufferSize, sounds::{wrappers::AdjustableSpeed, MemorySound}, *};
+use awedio::{backends::CpalBufferSize, sounds::{wrappers::{AdjustableSpeed, Controllable, Controller, Pausable, Stoppable}, MemorySound}, *};
 use pitch_detection::{detector::{mcleod::McLeodDetector, PitchDetector}, *};
-use rppal::gpio::Gpio;
-use std::{env, thread::sleep, time::Duration};
+use rppal::{gpio::{Event, Gpio, Trigger}, i2c::I2c};
+use std::{env, sync::{atomic::{AtomicBool, AtomicU16}, Arc, Mutex}, thread::sleep, time::Duration};
 use std::fs::File;
 use std::io;
 use embedded_graphics::{
@@ -11,6 +11,14 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd1306};
+use vl53l1x::Vl53l1x;
+
+enum FilterType {
+    HPF,
+    LPF,
+}
+
+type ROIRight = AtomicBool;
 
 const SAMPLE_RATE: usize = 48000;
 const SIZE: usize = 1024;
@@ -18,10 +26,26 @@ const PADDING: usize = SIZE / 2;
 const POWER_THRESHOLD: f64 = 0.0001;
 const CLARITY_THRESHOLD: f64 = 0.25;
 
+const TEMP_PIN: u8 = 27;
+const TOF_INT_PIN: u8 = 17;
+
+const DEFAULT_EQ_LEVEL: u16 = 12;
+
 fn main() {
     init_eq();
-
+    let gpio = Gpio::new().expect("failed to init gpio");
+    
     let i2c = rppal::i2c::I2c::new().expect("failed to open I2C bus!");
+
+    let tof_sensor: Arc<Mutex<Vl53l1x>> = Arc::new(Mutex::new(init_tof()));
+    let main_thr_sens = tof_sensor.clone();
+    let cur_roi: ROIRight = ROIRight::new(true);
+    let cur_eq3: AtomicU16 = AtomicU16::new(DEFAULT_EQ_LEVEL);
+    let mut tof_int_pin = gpio.get(TOF_INT_PIN).expect("failed to get tof interrupt pin").into_input();
+    tof_int_pin.set_async_interrupt(Trigger::RisingEdge, None, move | e| tof_eq_int(e, tof_sensor.clone(), &cur_roi, &cur_eq3)).expect("failed to setup TOF interrupt");
+    let mut sensor = main_thr_sens.lock().expect("failed to lock sensor to begin ranging");
+    sensor.start_ranging(vl53l1x::DistanceMode::Short).expect("failed to begin tof ranging");
+    drop(sensor);
 
     // using an alternate address: https://docs.rs/ssd1306/latest/ssd1306/struct.I2CDisplayInterface.html
     let interface = I2CDisplayInterface::new(i2c);
@@ -73,8 +97,7 @@ fn main() {
     // let stdin = io::stdin();
     // let input = &mut String::new();
     // let _ = stdin.read_line(input);
-    let gpio = Gpio::new().expect("failed to init gpio");
-    let input = gpio.get(27).expect("failed to get gpio 27!").into_input();
+    let input = gpio.get(TEMP_PIN).expect("failed to get gpio 27!").into_input();
     
     let mut wait = input.is_high();
     while wait {
@@ -120,36 +143,48 @@ fn main() {
 
     let correction: f64 = (523.2 / (pitch.frequency as f64));
 
-    let base: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of((1.0 * correction) as f32);
-    let second: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of((1.26 * correction) as f32);
-    let third: AdjustableSpeed<MemorySound> = sound.clone().with_adjustable_speed_of((1.498 * correction) as f32);
+    // let mut base:   (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.0 * correction) as f32).stoppable().controllable();
+    // let mut second: (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.26 * correction) as f32).stoppable().controllable();
+    // let mut third:  (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.498 * correction) as f32).stoppable().controllable();
 
-    manager.play(Box::new(base));
-    manager.play(Box::new(second));
-    manager.play(Box::new(third));
+    // let (base_snd, mut base_ctrl) = sound.clone().with_adjustable_speed_of((1.0 * correction) as f32).pausable().controllable();
+    // let (second_snd, mut second_ctrl) = sound.clone().with_adjustable_speed_of((1.26 * correction) as f32).pausable().controllable();
+    // let (third_snd, mut third_ctrl) = sound.clone().with_adjustable_speed_of((1.498 * correction) as f32).pausable().controllable();
 
-    let mut next_lev_5: i8 = 11; 
-    let mut next_lev_4: i8 = 11; 
-    let mut next_lev_3: i8 = 11; 
 
-    for i in 1..37 {
-        if next_lev_5 >= 0 {
-            set_eq(5, next_lev_5);
-            next_lev_5 -= 1;
-        }
-        if i % 2 == 0 && next_lev_4 >= 0 {
-            set_eq(4, next_lev_4);
-            next_lev_4 -= 1;
-        }
-        if i % 2 == 0 && next_lev_3 >= 0{
-            set_eq(3, next_lev_3);
-            next_lev_3 -= 1;
-        }
-        sleep(std::time::Duration::from_millis(138));
+    loop {
+        let mut base:   (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.0 * correction) as f32).stoppable().controllable();
+        let mut second: (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.26 * correction) as f32).stoppable().controllable();
+        let mut third:  (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.498 * correction) as f32).stoppable().controllable();
+        manager.play(Box::new(base.0));
+        manager.play(Box::new(second.0));
+        manager.play(Box::new(third.0));
+
+        // let mut next_lev_5: i8 = 11; 
+        // let mut next_lev_4: i8 = 11; 
+        // let mut next_lev_3: i8 = 11; 
+
+        // for i in 1..37 {
+        //     if next_lev_5 >= 0 {
+        //         set_eq(5, next_lev_5);
+        //         next_lev_5 -= 1;
+        //     }
+        //     if i % 2 == 0 && next_lev_4 >= 0 {
+        //         set_eq(4, next_lev_4);
+        //         next_lev_4 -= 1;
+        //     }
+        //     if i % 2 == 0 && next_lev_3 >= 0{
+        //         set_eq(3, next_lev_3);
+        //         next_lev_3 -= 1;
+        //     }
+        //     sleep(std::time::Duration::from_millis(138));
+        // }
+
+        std::thread::sleep(std::time::Duration::from_millis(5000));
+        base.1.set_stopped();
+        second.1.set_stopped();
+        third.1.set_stopped();
     }
-
-    // std::thread::sleep(std::time::Duration::from_millis(5000));
-    
     display.clear_buffer();
     display.flush().unwrap();
 }
@@ -180,4 +215,59 @@ fn set_eq(freq: u8, level: i8) {
         .args(vec!["-c", "1", "cset", numid, lev])
         .spawn().expect("Failed to launch amixer!");
 
+}
+
+fn init_tof() -> Vl53l1x {
+    let mut tof_sensor = Vl53l1x::new(1, None).expect("Failed to create TOF sensor struct");
+    tof_sensor.init().expect("Failed to init TOF sensor");
+    tof_sensor.set_measurement_timing_budget(20000).expect("failed to set measurement timing");
+    tof_sensor.set_inter_measurement_period(24).expect("failed to set inter-measurement timing");
+
+    tof_sensor.set_user_roi(8, 0, 15, 15).expect("failed to set ROI Right");
+
+    return tof_sensor;
+}
+
+fn tof_eq_int(_event: Event, tof_sensor: Arc<Mutex<Vl53l1x>>, cur_roi: &ROIRight, cur_eq3: &AtomicU16) {
+    let mut sensor = tof_sensor.lock().expect("failed to acquire sensor lock");
+        let sample = sensor.read_sample().expect("failed to get right sample");
+        let filter_strength: i8 = if sample.distance < 300 {
+            (sample.distance/25).try_into().unwrap()
+        } else {
+            12
+        };
+    if cur_roi.load(std::sync::atomic::Ordering::SeqCst) {
+        set_filter(FilterType::LPF, filter_strength, cur_eq3);
+        cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
+        sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Left during interrupt");
+    } else {
+        set_filter(FilterType::HPF, filter_strength, cur_eq3);
+        cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
+        sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Right during interrupt");
+    }
+}
+
+fn set_filter(filter: FilterType, strength: i8, cur_eq3: &AtomicU16) {
+    match filter {
+        FilterType::LPF => {
+            set_eq(1, strength/3);
+            set_eq(2, strength/2);
+        },
+        FilterType::HPF => {
+            set_eq(4, strength/3);
+            set_eq(5, strength/2);
+
+        }
+    }
+
+    cur_eq3.fetch_update(std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst, |cur_strength| {
+        if cur_strength > (strength) as u16 {
+            Some(strength as u16)
+        } else {
+            Some(cur_strength)
+        }
+    }).expect("failed to set eq3 strength");
+
+    let eq3: i8 = cur_eq3.load(std::sync::atomic::Ordering::SeqCst).try_into().unwrap(); 
+    set_eq(3, eq3);
 }
