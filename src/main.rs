@@ -114,18 +114,6 @@ fn main() {
     sensor.start_ranging(vl53l1x::DistanceMode::Short).expect("failed to begin tof ranging");
     drop(sensor);
 
-
-
-    let tof_sensor: Arc<Mutex<Vl53l1x>> = Arc::new(Mutex::new(init_tof()));
-    let main_thr_sens = tof_sensor.clone();
-    let cur_roi: ROIRight = ROIRight::new(true);
-    let cur_eq3: AtomicU16 = AtomicU16::new(DEFAULT_EQ_LEVEL);
-    let mut tof_int_pin = gpio.get(TOF_INT_PIN).expect("failed to get tof interrupt pin").into_input();
-    tof_int_pin.set_async_interrupt(Trigger::RisingEdge, None, move | e| tof_eq_int(e, tof_sensor.clone(), &cur_roi, &cur_eq3)).expect("failed to setup TOF interrupt");
-    let mut sensor = main_thr_sens.lock().expect("failed to lock sensor to begin ranging");
-    sensor.start_ranging(vl53l1x::DistanceMode::Short).expect("failed to begin tof ranging");
-    drop(sensor);
-
     //let (mut manager, _backend) = awedio::start().expect("couldn't start audio backend!");
     let mut backend =
         backends::CpalBackend::with_default_host_and_device(1,48000,CpalBufferSize::Default).ok_or(backends::CpalBackendError::NoDevice).expect("failed to initilize cpal backend!");
