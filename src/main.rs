@@ -140,7 +140,7 @@ fn main() {
         .get_pitch(&samples, SAMPLE_RATE, POWER_THRESHOLD, CLARITY_THRESHOLD)
         .unwrap(); 
 
-    let correction: f64 = (523.2 / (pitch.frequency as f64));
+    let correction: f64 = (261.6 / (pitch.frequency as f64));
 
     // let mut base:   (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.0 * correction) as f32).stoppable().controllable();
     // let mut second: (Controllable<Stoppable<AdjustableSpeed<MemorySound>>>, Controller<Stoppable<AdjustableSpeed<MemorySound>>>) = sound.clone().with_adjustable_speed_of((1.26 * correction) as f32).stoppable().controllable();
@@ -224,7 +224,7 @@ fn init_tof() -> Vl53l1x {
     tof_sensor.set_measurement_timing_budget(20000).expect("failed to set measurement timing");
     tof_sensor.set_inter_measurement_period(24).expect("failed to set inter-measurement timing");
 
-    tof_sensor.set_user_roi(8, 15, 15, 0).expect("failed to set ROI Right");
+    tof_sensor.set_user_roi(10, 15, 15, 0).expect("failed to set ROI Right");
     
     println!("initilized TOF sensor");
     return tof_sensor;
@@ -243,13 +243,15 @@ fn tof_eq_int(_event: Event, tof_sensor: Arc<Mutex<Vl53l1x>>, cur_roi: &ROIRight
                 12
             };
             if cur_roi.load(std::sync::atomic::Ordering::SeqCst) {
+                println!("left");
                 set_filter(FilterType::LPF, filter_strength, cur_eq3);
                 cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
-                sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Left during interrupt");
+                sensor.set_user_roi(0, 15, 4, 0).expect("failed to set ROI Left during interrupt");
             } else {
+                println!("right");
                 set_filter(FilterType::HPF, filter_strength, cur_eq3);
-                cur_roi.store(false, std::sync::atomic::Ordering::SeqCst);
-                sensor.set_user_roi(0, 0, 7, 15).expect("failed to set ROI Right during interrupt");
+                cur_roi.store(true, std::sync::atomic::Ordering::SeqCst);
+                sensor.set_user_roi(11, 15, 15, 0).expect("failed to set ROI Right during interrupt");
             }
         }
         _ => {}
@@ -259,24 +261,20 @@ fn tof_eq_int(_event: Event, tof_sensor: Arc<Mutex<Vl53l1x>>, cur_roi: &ROIRight
 fn set_filter(filter: FilterType, strength: i8, cur_eq3: &AtomicU16) {
     match filter {
         FilterType::LPF => {
-            set_eq(1, strength/3);
-            set_eq(2, strength/2);
+            set_eq(1, strength/2);
+            set_eq(2, strength);
         },
         FilterType::HPF => {
-            set_eq(4, strength/3);
+            set_eq(4, strength);
             set_eq(5, strength/2);
 
         }
     }
 
-    cur_eq3.fetch_update(std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst, |cur_strength| {
-        if cur_strength > (strength) as u16 {
-            Some(strength as u16)
-        } else {
-            Some(cur_strength)
-        }
-    }).expect("failed to set eq3 strength");
+    // cur_eq3.fetch_update(std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst, |cur_strength| {
+    //         Some(strength as u16)
+    // }).expect("failed to set eq3 strength");
 
-    let eq3: i8 = cur_eq3.load(std::sync::atomic::Ordering::SeqCst).try_into().unwrap(); 
-    set_eq(3, eq3);
+    // let eq3: i8 = cur_eq3.load(std::sync::atomic::Ordering::SeqCst).try_into().unwrap(); 
+    // set_eq(3, eq3);
 }
